@@ -1,0 +1,188 @@
+package com.hygenics.xmlcleaner
+
+
+import org.apache.commons.lang3.exception.ExceptionUtils
+import scala.xml._
+import xml._
+import javax.xml.parsers.{DocumentBuilderFactory,DocumentBuilder}
+import javax.xml.xpath._
+import org.w3c.dom._
+import sbt.IO
+import java.io.File
+import scala.beans._
+import scala.collection.JavaConversions._
+import com.hygenics.beans.MainApp
+import javax.xml.transform.{TransformerFactory,Transformer}
+
+
+import scala.xml.transform._
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{ Await, Future }
+import scala.util.{Success,Failure}
+import scala.concurrent.duration._
+
+/**
+ * This class can be used to cleanup XML files. from multiple directories.
+ * It is solely for creating, appending, and updating tags from existing
+ * XML documents.
+ * 
+ * @author aevans
+ */
+class XMLTagCleaner {
+  
+  @BeanProperty
+  var roots:java.util.Map[String,String] = _ //the root to append to 
+  
+  @BeanProperty
+  var termtime:Long = 45000
+  
+  @BeanProperty
+  var directories: java.util.List[String] = _ //directories to use
+
+  @BeanProperty
+  var fRegex: String = _ //regex to limit the file on
+  
+  @BeanProperty
+  var tags:java.util.List[String] = _ //tag names used to identify tags (name is uniqName)
+ 
+  @BeanProperty
+  var attributes: java.util.Map[String,Map[String,String]] = _ //a mapping of children
+  
+  @BeanProperty
+  var dels: java.util.List[String] = _ //beans and things to delete
+  
+  @BeanProperty
+  var tagTypes:java.util.Map[String,String] = _ //tag types associated with the required unique names
+
+  
+  @BeanProperty
+  var attributeAdditions:java.util.Map[String,Map[String,String]] = _ // a map for adding attributes (used dels to delete things) Map[xpath,List[
+   
+  /**
+   * Future for Creating Tags
+   * @param file : a java.io.File object to read the XML from 
+   */
+  def createTags(file: File): Future[Boolean] = Future {
+    val printer = new scala.xml.PrettyPrinter(250,5)
+    try{
+      var factory:DocumentBuilderFactory = DocumentBuilderFactory.newInstance()
+      factory.setValidating(true)
+      var builder:DocumentBuilder = factory.newDocumentBuilder()
+      val doc = builder.parse(file)
+      
+      var elems:String=""
+       tags.foreach { k =>
+          MainApp.log.info("Iteration for "+k)
+          var elem = doc.createElement(tagTypes.get(k))
+          
+          if( elem != null){
+            elem.setAttribute("uniqName", k)
+            
+            if(attributes != null){
+              attributes.get(k).foreach{
+                x => elem.setAttribute(x._1, x._2)
+              }
+            }
+            
+          }
+          
+          val xpath = XPathFactory.newInstance().newXPath()
+          var nodes=xpath.compile(roots.get(k)).evaluate(doc,XPathConstants.NODESET).asInstanceOf[NodeList]
+          var append=builder.parse(new java.io.ByteArrayInputStream(elem.toString.getBytes)).getDocumentElement.asInstanceOf[org.w3c.dom.Node]
+          if(nodes.getLength > 0){
+            append=doc.importNode(append, true)
+            doc.getDocumentElement.insertBefore(append,nodes.item(0).getNextSibling)
+          }
+          nodes=null
+      }
+      
+      if(dels != null){
+        dels.foreach { x =>
+            val xpath = XPathFactory.newInstance().newXPath()
+            var nodes=xpath.compile(x).evaluate(doc,XPathConstants.NODESET).asInstanceOf[NodeList]
+            if(nodes.getLength > 0){
+              nodes.item(0).getParentNode.removeChild(nodes.item(0))
+            }
+            nodes=null
+        }
+      }
+      
+      if(attributeAdditions != null){
+        attributeAdditions.keySet.foreach{ x => 
+           val xpath = XPathFactory.newInstance().newXPath()
+           var nodes = xpath.compile(x).evaluate(doc,XPathConstants.NODESET).asInstanceOf[NodeList]
+           if(nodes.getLength > 0){
+             attributeAdditions.get(x).foreach{ kv => 
+               val tg = doc.createElement(kv._2)
+               val kvArr=kv._1.split("::")
+               if(kvArr(1).equals("text")){
+                 tg.setTextContent(kvArr(0))
+               }else if(!kvArr(1).equals("map")){
+                 tg.setAttribute(kv._2, kvArr(0))
+               }else{
+                 val kvp=kvArr(0).split(":")
+                 tg.setAttribute("key", kvp(0))
+                 tg.setAttribute("value", kvp(1))
+               }
+               doc.importNode(tg, true)
+               nodes.item(0).appendChild(tg)
+             }
+           }
+        }
+      }
+      
+      
+      val tf=TransformerFactory.newInstance.newTransformer()
+      val sw = new java.io.StringWriter()
+      tf.transform(new javax.xml.transform.dom.DOMSource(doc), new javax.xml.transform.stream.StreamResult(sw))
+      IO.write(file,printer.format(XML.loadString(sw.getBuffer.toString)).getBytes)  
+      true
+    }catch{
+      case x:Throwable => MainApp.log.error("Failed to Add Beans to an XML File :: "+file.getAbsolutePath+"\n"+x.getMessage+"\n"+ExceptionUtils.getStackTrace(x))
+      false
+    }
+    
+  }
+
+  /**
+   * The entry point to the program. Reads all appropriate files into 
+   * file objects and generates an appropriate number of worker processes
+   * for speed based on the number of available cores via Runtime().
+   */
+  def run() = {
+    try {
+      var futs:List[Future[Boolean]] = List[Future[Boolean]]()
+      directories.foreach { directory =>
+        IO.listFiles(new File(directory)).foreach { fpath =>
+          MainApp.log.info("Found: "+fpath)
+          if(fRegex == null || fpath.getAbsolutePath.matches(fRegex)){
+            if(tags != null){
+              futs = futs :+ createTags(fpath)
+            }
+            
+            if(futs.length > Runtime.getRuntime.availableProcessors()){
+              if(Await.result(Future.sequence(futs),Duration(termtime,"millis")).filter { x => !x }.length >0){
+                MainApp.log.error("One or more Parsings Failed. See Above Log for Details!")
+              }        
+              futs=List[Future[Boolean]]()
+            }
+          }
+        }
+      }
+      
+      
+      if(futs.length > 0){
+        if(Await.result(Future.sequence(futs),Duration(termtime,"millis")).filter { x => !x }.length >0){
+          MainApp.log.error("One or more Parsings Failed. See Above Log for Details!")
+        }
+      }
+      
+    } catch {
+      case x: Throwable => MainApp.log.error("Failed to Change XML Files:\n"+x.getMessage+"\n"+ExceptionUtils.getStackTrace(x))
+    }
+
+  }
+  
+  
+  
+}

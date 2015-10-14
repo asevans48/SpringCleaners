@@ -1,0 +1,68 @@
+package main.scala.com.hygenics.beans
+
+import scala.xml._
+import sbt.io._
+import scala.beans._
+import scala.collection.JavaConversions._
+import com.hygenics.beans._;
+
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{Await,Future}
+import scala.concurrent.duration._
+
+/**
+ * A cleaner that aids in the generation and dsetruction of beans for batch processing.
+ * Can Perform Large Batch Updating Quickly based on a directory. To limit to specific
+ * files, specify a regular expression matching string via the string fRegex.
+ * 
+ * A current limitation to make the API slightly easier is to place beans directly underneath
+ * a certain bean or the head node. This is set by specifying a node. However, it is possible
+ * to run multiple instances of Spring Cleaner with different starting indexes.
+ * 
+ * @author aevans
+ */
+class SpringCleaner {
+  
+  private var files:String = _
+  private var startIndex:Int = 0
+  
+  @BeanProperty
+  var directory:String = _
+  
+  @BeanProperty
+  var fRegex:String = _
+  
+  @BeanProperty
+  var dels:java.util.List[String] = _
+  
+  @BeanProperty
+  var additions:java.util.Map[String,java.util.Map[String,java.util.Map[String,String]]] = _ //a util:Map with a Map in it with a map in it
+  
+  
+  def delBeans() ={  
+  }
+  
+  def addBeans(fpath:String):Future[Boolean]=Future{
+    additions.keySet.foreach { k => 
+        //create the main bean
+      
+        additions.get(k).keySet.foreach { prop =>
+          //check for a value type
+          val proptype=additions.get(prop).get("type")
+          
+          //create the properties based on the type  
+        }
+    }
+    true
+  }
+  
+  def run()={
+    try{
+      
+    }catch{
+      case x:Throwable => 
+    }
+    
+  }
+  
+}

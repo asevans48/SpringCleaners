@@ -1,0 +1,39 @@
+package com.hygenics.beans;
+
+import org.springframework.context.support.ClassPathXmlApplicationContext;
+
+import com.hygenics.beancleaner.SpringCleaner;
+
+import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
+
+public class MainApp {
+
+	public static final Logger log = LoggerFactory.getLogger(MainApp.class);
+
+	public static void main(String[] args) {
+		log.info("Starting to Clean");
+		try {
+			ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
+					("file:" + System.getProperty("beansfile").trim()));
+			int currIndex = 0;
+			boolean run = true;
+			do {
+				if (context.containsBean("Cleaners" + currIndex)) {
+					((SpringCleaner) context.getBean("Cleaners" + currIndex)).run();
+				} else if (currIndex == 0 && context.containsBean("Cleaners")) {
+					((SpringCleaner) context.getBean("Cleaners")).run();
+				} else {
+					log.info("Terminating at Run: "+currIndex);
+					run = false;
+				}
+				currIndex += 1;
+			} while (run == true);
+		} catch (Exception e) {
+			log.error("Failed to Clean All XML Bean Files");
+			e.printStackTrace();
+		}
+		log.info("Finished Cleaning Files. Check for Errors!");
+
+	}
+}

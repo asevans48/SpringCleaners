@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:p="http://www.springframework.org/schema/p"
+	xmlns:util="http://www.springframework.org/schema/util"
+	xmlns:mvc="http://www.springframework.org/schema/mvc"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans
+		http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+		http://www.springframework.org/schema/util 
+		http://www.springframework.org/schema/util/spring-util-4.0.xsd
+        http://www.springframework.org/schema/mvc
+        http://www.springframework.org/schema/mvc/spring-mvc-4.0.xsd
+		http://www.springframework.org/schema/context
+		http://www.springframework.org/schema/context/spring-context-4.0.xsd"
+	default-lazy-init="false">
+<context:annotation-config/>
+ <context:component-scan base-package="com.hygenics.beancleaner" />
+ <!-- For Testing the Spring Cleaner -->
+ <bean id="Cleaners" class="com.hygenics.beancleaner.SpringCleaner">
+ 	<property name="roots">
+ 		<map>
+ 			<entry key="Notify" value="//bean[@id='props']"/>
+ 			<entry key="Move0" value="//bean[@id='props']"/>
+ 		</map>
+ 	</property>
+ 	<property name="directories">
+ 		<list>
+ 			<value>/home/aevans/Documents/workspace-sts-3.5.1.RELEASE/AutoSOR/SORParsers/</value>
+ 		</list>
+ 	</property>
+ 	<property name="fRegex" value=".*?.xml"/>
+ 	<property name="dels">
+ 	 	<list>
+ 	 		<value>//bean[@id='SpecDumpWithReference']/property[@name='tablesMustHave']/list/value[contains(text(),'records')]</value>
+ 	 		<!-- 
+ 	 		<value>//bean[@id='Notify']</value>
+ 	 		<value>//bean[@id='Move0']</value>
+ 	 		<value>//bean[@id='Move']</value>
+ 	 		<value>//bean[@id='Email']</value>
+ 	 		<value>//bean[@id='Email0']</value>
+ 	 		<value>//bean[@id='mailSender']</value>
+ 	 		<value>//property[@name='activities']/list/value[contains(text(),'Email')]</value>
+ 	 		<value>//property[@name='activities']/list/value[contains(text(),'Notify')]</value>
+ 	 		<value>//property[@name='activities']/list/value[contains(text(),'Move')]</value>
+ 	 		<value>//bean[@id='dataSource']</value>
+ 	 		<value>//bean[@id='jdbcTemplate']</value>
+ 	 		<value>//bean[@id='getDAOTemplate']</value>
+ 	 		-->
+ 	 	</list>
+ 	</property>
+ 	<!--
+ 	<property name="beans">
+ 		<map>
+ 			<entry key="Notify" value="com.hygenics.scala.notification"/>
+ 			<entry key="Move0" value="com.hygenics.scala.MoveFile"/>
+ 		</map>
+ 	</property>
+ 	<property name="parents">
+ 		<map>
+ 			<entry key="Notify" value="notificationDetails"/>
+ 		</map>
+ 	</property>
+ 	<property name="constructorArgs">
+ 		<util:map>
+ 			<entry key="Notify">
+ 				<map>
+ 					<entry key="source" value="$FROMFILENAME"/>
+ 				</map>
+ 			</entry>
+ 		</util:map>
+ 	</property>
+ 	<property name="propertyAdditions">
+ 		<util:map>
+ 			<entry key="Move0">
+ 				<map>
+ 					<entry key="source" value="${droppath}NV/SOR/"/>
+ 					<entry key="target" value="${droppath}HDScrapeDelivery/SOR/"/>
+ 				</map>
+ 			</entry>
+ 		</util:map>
+ 	</property>
+ 	-->
+ 	<property name="attributeAdditions">
+ 		<util:map>
+ 			<entry key="//property[@name='activities']/list">
+ 				<map>
+ 					<entry key="Notify::text" value="value"/>
+ 					<entry key="Move::text" value="value"/>
+ 				</map>
+ 			</entry>
+ 		</util:map>
+ 	</property>
+ </bean>
+ </beans>

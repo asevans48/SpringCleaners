@@ -1,0 +1,8 @@
+package com.hygenics.xmlcleaner
+
+/**
+ * @author aevans
+ */
+class XMLTagCleaner {
+  
+}

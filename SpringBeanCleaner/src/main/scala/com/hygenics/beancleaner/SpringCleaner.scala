@@ -1,0 +1,324 @@
+package com.hygenics.beancleaner
+
+import org.apache.commons.lang3.exception.ExceptionUtils
+import scala.xml._
+import javax.xml.parsers.{DocumentBuilderFactory,DocumentBuilder}
+import javax.xml.xpath._
+import org.w3c.dom._
+import sbt.IO
+import java.io.File
+import scala.beans._
+import scala.collection.JavaConversions._
+import com.hygenics.beans.MainApp
+import javax.xml.transform.{TransformerFactory,Transformer}
+
+
+import scala.xml.transform._
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{ Await, Future }
+import scala.util.{Success,Failure}
+import scala.concurrent.duration._
+
+/**
+ * A cleaner that aids in the generation and dsetruction of beans for batch processing.
+ * Can Perform Large Batch Updating Quickly based on a directory. To limit to specific
+ * files, specify a regular expression matching string via the string fRegex.
+ *
+ * A current limitation to make the API slightly easier is to place beans directly underneath
+ * a certain bean or the head node. This is set by specifying a node. However, it is possible
+ * to run multiple instances of Spring Cleaner with different starting indexes.
+ *
+ * Structures are currentl limited to the structures I use (no Hashed Trees and Such fanciness yet).
+ * 
+ * Since my ref beans are currently in the shared files, I have not added reference capacities yet for the header.
+ * 
+ * This will not generate a root bean or header definition either. It is meant for batch cleaning files, not creating them.
+ * 
+ * @author aevans
+ */
+class SpringCleaner {
+ 
+  @BeanProperty
+  var termtime:Long = 45000
+  
+  @BeanProperty
+  var directories: java.util.List[String] = _
+
+  @BeanProperty
+  var fRegex: String = _
+
+  @BeanProperty
+  var attributeAdditions:java.util.Map[String,java.util.Map[String,String]] = _// a map for adding attributes (used dels to delete things) Map[xpath,List[
+  
+  @BeanProperty
+  var roots: java.util.Map[String,String] = _ //the root to append each bean to 
+  
+  @BeanProperty
+  var parents:java.util.Map[String,String] = _ //a list of parents attached to a bean id
+
+  
+  @BeanProperty
+  var dels: java.util.List[String] = _
+
+  @BeanProperty
+  var beans:java.util.Map[String,String] = _ //the bean names [id,class]
+  
+  @BeanProperty
+  var constructorArgs:java.util.Map[String,java.util.Map[String,java.util.List[String]]] = null //creates constructor arguments [beanid,[constructor-arg name,val]]
+  
+  @BeanProperty
+  var propertyAdditions: java.util.Map[String,java.util.Map[String,String]] = _ //generates properties [beanid,[propname,value]]
+
+  @BeanProperty
+  var iterablAdditions:java.util.Map[String,java.util.Map[String,java.util.List[String]]] = _ //generates list [beanid,List[listValue,...]]
+  
+  @BeanProperty
+  var mapAdditions:java.util.Map[String,java.util.Map[String,java.util.Map[String,String]]] = _ //generates maps [beanid,Map[key,value]]
+  
+  @BeanProperty
+  var refs:java.util.Map[String,java.util.Map[String,String]] = _ //generates reference properties
+  
+  
+  @BeanProperty
+  var additionsToExistingBeans: java.util.Map[String,java.util.Map[String,String]] = _ //creates properties on existing beans [xpath,[name,value or null for none (set lists and maps from attributes)]]
+  
+  /**
+   * A Future where all tasks are performed. 
+   * 
+   * @param file - a java.io.File object to read the XML from
+   */
+  def createBeans(file: File): Future[Boolean] = Future {
+    val printer = new scala.xml.PrettyPrinter(250,5)
+    try{
+      var factory:DocumentBuilderFactory = DocumentBuilderFactory.newInstance()
+      factory.setValidating(true)
+      factory.setIgnoringComments(false)
+      var builder:DocumentBuilder = factory.newDocumentBuilder()
+      val doc = builder.parse(file)
+      
+      if(dels != null){
+        dels.foreach { x =>
+            val xpath = XPathFactory.newInstance().newXPath()
+            var nodes=xpath.compile(x).evaluate(doc,XPathConstants.NODESET).asInstanceOf[NodeList]
+            if(nodes.getLength > 0){
+              nodes.item(0).getParentNode.removeChild(nodes.item(0))
+            }
+            nodes=null
+        }
+      }
+      
+       if(beans != null){
+         beans.keySet.foreach { k =>
+           MainApp.log.info("Iteration for "+k)
+          var children:List[java.io.Serializable]=List[java.io.Serializable]()
+          
+          
+          //constructor-args
+          if(constructorArgs != null){
+            var cres=constructorArgs.getOrElse(k,null)
+            if(cres != null){
+              cres.keySet.foreach { x =>{
+                  var vArr=cres.get(x)
+                  var value = vArr(1)
+                  if(value.equals("$FROMFILENAME")){
+                    value=file.getName.replaceAll("\\.txt|\\.xml","")
+                  }
+                  children = children :+ <constructor-arg name={x} type={vArr(0)} value={value}/> 
+                }
+              }
+            }
+            cres = null
+          }
+          
+          //generate reference properties 
+          if(refs != null){
+            var rres=refs.getOrElse(k,null)
+            if(rres != null){
+              rres.keySet.foreach { x => children = children :+ <property name = {x} ref = {rres.get(x)} />}
+            }
+            rres = null
+          }
+          
+          //property additions
+          if(propertyAdditions != null){
+            
+            var res=propertyAdditions.getOrElse(k,null)
+            
+            if(res != null){
+              MainApp.log.info(k)
+              MainApp.log.info(res.toString)
+              res.foreach(
+                 f =>{
+                   var value=f._2
+                   
+                   if(f._2.equals("$FROMFILENAME")){
+                     value=file.getName.replaceAll("\\.txt|\\.xml","")
+                   }
+                   
+                   children = children :+ <property name={f._1} value={value}/> 
+                }
+              )
+            }
+            res=null
+          }
+        
+          //list additions
+          if(iterablAdditions != null){
+            var mres= iterablAdditions.getOrElse(k,null)
+            if(mres != null){
+              mres.foreach(
+                f => children = children :+ <property name = {f._1}><list>{f._2.map { li => <value>{li}</value>}}</list></property>
+              )
+            }
+            mres = null
+          }
+          
+          MainApp.log.info(children.toString)
+          
+          //map additions
+          if(mapAdditions != null){
+            var mpres=mapAdditions.getOrElse(k,null)
+            
+            if(mpres != null){
+              mpres.keySet.foreach(
+                mkey => children = children :+ <property name = {mkey}><map>{mpres.get(mkey).toList.map(kv => <entry key={kv._1} value ={kv._2}/>)}</map></property>
+              )
+            }
+            mpres=null
+          }
+          
+          var bn:String = null     
+          if(parents == null || parents.getOrElse(k,null) == null){
+            bn = <bean id={k} class={beans.get(k)}>{children}</bean>.toString
+         
+          }else{
+            bn = <bean id={k} class={beans.get(k)} parent={parents.get(k)}>{children}</bean>.toString
+          }
+          val xpath = XPathFactory.newInstance().newXPath()
+          var nodes=xpath.compile(roots.get(k)).evaluate(doc,XPathConstants.NODESET).asInstanceOf[NodeList]
+          var append=builder.parse(new java.io.ByteArrayInputStream(bn.getBytes)).getDocumentElement.asInstanceOf[org.w3c.dom.Node]
+          if(nodes.getLength > 0){
+            append=doc.importNode(append, true)
+            try{
+              doc.getDocumentElement.insertBefore(append,nodes.item(0).getNextSibling)
+            }catch{
+              case _ => doc.getDocumentElement.appendChild(append)
+            }
+          }
+          nodes=null
+        }
+      }
+      
+      if(additionsToExistingBeans != null){
+         val xpath = XPathFactory.newInstance().newXPath()
+         additionsToExistingBeans.keySet.foreach{ x =>
+           var nodes = xpath.compile(x).evaluate(doc,XPathConstants.NODESET).asInstanceOf[NodeList]
+           if(nodes.getLength > 0){
+             additionsToExistingBeans.get(x).foreach{ kv =>
+               val tg = doc.createElement("property")
+               tg.setAttribute("name", kv._1)
+               if(kv._2 != null && !kv._2.equals("null")){
+                 tg.setAttribute("value", kv._2)
+               }
+               doc.importNode(tg,true)
+               nodes.item(0).appendChild(tg)
+             }
+           }
+         }
+      }
+      
+      if(attributeAdditions != null){
+        attributeAdditions.keySet.foreach{ x => 
+           val xpath = XPathFactory.newInstance().newXPath()
+           var nodes = xpath.compile(x).evaluate(doc,XPathConstants.NODESET).asInstanceOf[NodeList]
+           if(nodes.getLength > 0){
+             attributeAdditions.get(x).foreach{ kv => 
+               var tg = doc.createElement(kv._2)
+               val kvArr=kv._1.split("::")
+               
+               if(kvArr(1).equals("values")){
+                 kvArr(0).split(":").foreach { x => 
+                   tg=doc.createElement("value")
+                   tg.setTextContent(x)
+                   doc.importNode(tg, true)
+                   nodes.item(0).appendChild(tg)
+                 }
+                 
+               }else{
+                 if(kvArr(1).equals("text")){
+                   tg.setTextContent(kvArr(0))
+                 }else if(!kvArr(1).equals("map") && !kvArr(1).equals("list")){
+                   tg.setAttribute(kv._2, kvArr(0))
+                 }else if(kvArr(1).equals("list")){
+                   kvArr(0).split(":").foreach { li => 
+                     var tgt=doc.createElement("value")
+                     tgt.setTextContent(li)
+                     tg.appendChild(tgt)
+                   }
+                 }else{
+                   val kvp=kvArr(0).split(":")
+                   tg.setAttribute("key", kvp(0))
+                   tg.setAttribute("value", kvp(1))
+                 }
+                 
+                 doc.importNode(tg,true)
+                 nodes.item(0).appendChild(tg)
+               }
+             }
+           }
+        }
+      }
+      
+      
+      val tf=TransformerFactory.newInstance.newTransformer()
+      val sw = new java.io.StringWriter()
+      tf.transform(new javax.xml.transform.dom.DOMSource(doc), new javax.xml.transform.stream.StreamResult(sw))
+      IO.write(file,printer.format(parsing.ConstructingParser.fromSource(scala.io.Source.fromString(sw.getBuffer.toString), preserveWS = true).document.docElem).getBytes)  
+      true
+    }catch{
+      case x:Throwable => MainApp.log.error("Failed to Add Beans to an XML File :: "+file.getAbsolutePath+"\n"+x.getMessage+"\n"+ExceptionUtils.getStackTrace(x))
+      false
+    }
+    
+  }
+
+   /**
+   * The entry point to the program. Reads all appropriate files into 
+   * file objects and generates an appropriate number of worker processes
+   * for speed based on the number of available cores via Runtime().
+   */
+  def run() = {
+    try {
+      var futs:List[Future[Boolean]] = List[Future[Boolean]]()
+      directories.foreach { directory =>
+        IO.listFiles(new File(directory)).foreach { fpath =>
+          MainApp.log.info("Found: "+fpath)
+          if(fRegex == null || fpath.getAbsolutePath.matches(fRegex)){
+            
+            futs = futs :+ createBeans(fpath)
+            
+            
+            if(futs.length > Runtime.getRuntime.availableProcessors()){
+              if(Await.result(Future.sequence(futs),Duration(termtime,"millis")).filter { x => !x }.length >0){
+                MainApp.log.error("One or more Parsings Failed. See Above Log for Details!")
+              }        
+              futs=List[Future[Boolean]]()
+            }
+          }
+        }
+      }
+      
+      
+      if(futs.length > 0){
+        if(Await.result(Future.sequence(futs),Duration(termtime,"millis")).filter { x => !x }.length >0){
+          MainApp.log.error("One or more Parsings Failed. See Above Log for Details!")
+        }
+      }
+      
+    } catch {
+      case x: Throwable => MainApp.log.error("Failed to Change XML Files:\n"+x.getMessage+"\n"+ExceptionUtils.getStackTrace(x))
+    }
+
+  }
+
+}

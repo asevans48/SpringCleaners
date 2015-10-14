@@ -1,0 +1,35 @@
+package com.hygenics.xmlcleaner
+
+
+import org.apache.commons.lang3.exception.ExceptionUtils
+import scala.xml._
+import javax.xml.parsers.{DocumentBuilderFactory,DocumentBuilder}
+import javax.xml.xpath._
+import org.w3c.dom._
+import sbt.IO
+import java.io.File
+import scala.beans._
+import scala.collection.JavaConversions._
+import com.hygenics.beans.MainApp
+import javax.xml.transform.{TransformerFactory,Transformer}
+
+
+import scala.xml.transform._
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{ Await, Future }
+import scala.util.{Success,Failure}
+import scala.concurrent.duration._
+
+/**
+ * This class can be used to cleanup XML files. from multiple directories.
+ * It is solely for creating, appending, and updating tags from existing
+ * XML documents.
+ * 
+ * @author aevans
+ */
+class XMLTagCleaner {
+  
+  
+  
+  
+}
